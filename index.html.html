@@ -98,7 +98,7 @@
             { name: '流氓', color: 'bg-emerald-100 text-emerald-800 border-emerald-300', icon: 'fa-bow-arrow' }
         ];
 
-        // 沿用您最新的 49 人王國成員名單
+        // 王國成員名單 (已加入 貢丸)
         const initialMembers = [
             { gameId: '竹息辣寶貝', lineId: 'Nick' }, { gameId: '這是我的鯊鯊', lineId: 'M' },
             { gameId: '歐娜', lineId: 'ANDYHU' }, { gameId: '雪山上の醬板鴨', lineId: 'Hank Shen' },
@@ -124,7 +124,8 @@
             { gameId: '『小雨醬：D』', lineId: '映兒' }, { gameId: '張大書', lineId: '張大書' },
             { gameId: '麵包師', lineId: '國基' }, { gameId: '就問你呿不呿', lineId: '陳則宇' },
             { gameId: 'ShirasakaRin', lineId: '✡️洲✡️' }, { gameId: 'かわいい肉呆呆', lineId: '𝕊𝔸ℝ𝕌😳' },
-            { gameId: '飛魚仔', lineId: '李昱玟' }
+            { gameId: '飛魚仔', lineId: '李昱玟' },
+            { gameId: '貢丸', lineId: '貢丸' }
         ].map((m, index) => ({ ...m, uniqueId: `mem_${index}` }));
 
         // 產生空白隊伍結構 (每隊 5 人)
@@ -140,11 +141,15 @@
             }))
         });
 
+        // 預設擴編為 7 隊
         const defaultTeams = [
             createEmptyTeam('team_1', '第一小隊 (主攻/進攻組)'),
             createEmptyTeam('team_2', '第二小隊 (防守/牽制組)'),
             createEmptyTeam('team_3', '第三小隊 (機動/支援組)'),
-            createEmptyTeam('team_4', '第四小隊 (游擊組)')
+            createEmptyTeam('team_4', '第四小隊 (游擊組)'),
+            createEmptyTeam('team_5', '第五小隊 (預備組)'),
+            createEmptyTeam('team_6', '第六小隊 (預備組)'),
+            createEmptyTeam('team_7', '第七小隊 (預備組)')
         ];
 
         function App() {
@@ -172,7 +177,7 @@
                 return () => unsubscribe();
             }, []);
 
-            // 即時監聽 Firestore 隊伍資料 (存放在 battleTeams 集合，與抽獎系統完全分開)
+            // 即時監聽 Firestore 隊伍資料 
             useEffect(() => {
                 const unsubscribe = db.collection('battleTeams').doc('allData').onSnapshot((doc) => {
                     if (doc.exists && doc.data() && Array.isArray(doc.data().teams)) {
@@ -197,9 +202,10 @@
                 setTimeout(() => setToastMessage(''), 3000);
             };
 
+            // 🔥 更新：將密碼修改為 741106
             const handlePasswordLogin = () => {
                 const pwd = window.prompt('請輸入管理員專屬密碼：');
-                if (pwd === 'meow') {
+                if (pwd === '741106') {
                     setCurrentUser({ displayName: '快捷管理員', isPassword: true });
                     setIsAdmin(true);
                     showToast('✅ 管理員權限已解鎖！');
@@ -265,6 +271,21 @@
                     setTeams(updated);
                     setActiveTeamId(updated[0].id);
                     saveToCloud(updated, '🗑️ 已刪除隊伍！');
+                }
+            };
+            
+            // 管理員：清空重置
+            const handleResetAll = async () => {
+                if (!isAdmin) return;
+                if (confirm('⚠️ 警告：確定要清空所有的隊伍配置嗎？這會回復到預設的 7 支空隊伍，且此動作無法復原！')) {
+                    try {
+                        await db.collection('battleTeams').doc('allData').set({ teams: defaultTeams });
+                        setTeams(defaultTeams);
+                        setActiveTeamId('team_1');
+                        showToast('♻️ 已清空並重置所有隊伍！');
+                    } catch (error) {
+                        showToast('❌ 清空失敗');
+                    }
                 }
             };
 
@@ -407,17 +428,25 @@
                                 )}
                             </div>
 
-                            <div className="flex gap-2 w-full md:w-auto">
+                            <div className="flex flex-wrap gap-2 w-full md:w-auto">
                                 <button 
                                     onClick={copyTeamSummary}
                                     className="flex-1 md:flex-none bg-slate-800 hover:bg-slate-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow flex items-center justify-center gap-2 transition-colors"
                                 >
-                                    <i className="fa-regular fa-copy"></i> 複製全隊配置 (LINE)
+                                    <i className="fa-regular fa-copy"></i> 複製全隊配置
                                 </button>
+                                {isAdmin && (
+                                    <button 
+                                        onClick={handleResetAll}
+                                        className="flex-1 md:flex-none bg-red-100 hover:bg-red-200 text-red-700 px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm flex items-center justify-center gap-2 transition-colors border border-red-300"
+                                    >
+                                        <i className="fa-solid fa-rotate-right"></i> 清空重置
+                                    </button>
+                                )}
                                 <button 
                                     onClick={() => saveToCloud(teams, '✅ 所有變更已儲存並同步至雲端！')}
                                     disabled={isSaving}
-                                    className="flex-1 md:flex-none bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow flex items-center justify-center gap-2 transition-colors"
+                                    className="flex-1 md:flex-none w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow flex items-center justify-center gap-2 transition-colors"
                                 >
                                     <i className="fa-solid fa-cloud-arrow-up"></i> {isSaving ? '儲存中...' : '儲存並同步'}
                                 </button>
@@ -577,7 +606,7 @@
                                                             {isAdmin ? (
                                                                 <textarea
                                                                     rows="3"
-                                                                    placeholder="輸入指派給此成員的戰場任務（例如：守中塔、跟隨主坦切後排、開補血陣...）"
+                                                                    placeholder="輸入指派給此成員的戰場任務（例如：守中塔、跟隨主坦切後排...）"
                                                                     value={slot.task || ''}
                                                                     onChange={(e) => handleSlotChange(currentTeam.id, idx, 'task', e.target.value)}
                                                                     className="w-full p-2.5 border border-rose-300 bg-rose-50/30 focus:bg-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-rose-400 outline-none resize-none"
