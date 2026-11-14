@@ -66,7 +66,7 @@
     </div>
 
     <script type="text/babel">
-        // 沿用您原本的 Firebase 設定
+        // Firebase 設定
         const firebaseConfig = {
             apiKey: "AIzaSyBfhqrnYUHEFutU9hf4Kii1zo2_XNd8TbM",
             authDomain: "hank-beb94.firebaseapp.com",
@@ -89,7 +89,7 @@
 
         const { useState, useEffect } = React;
 
-        // 職業清單與專屬配色
+        // 職業清單
         const CLASSES = [
             { name: '技師', color: 'bg-amber-100 text-amber-800 border-amber-300', icon: 'fa-wrench' },
             { name: '巫師', color: 'bg-purple-100 text-purple-800 border-purple-300', icon: 'fa-hat-wizard' },
@@ -98,7 +98,7 @@
             { name: '流氓', color: 'bg-emerald-100 text-emerald-800 border-emerald-300', icon: 'fa-bow-arrow' }
         ];
 
-        // 王國成員名單 (已加入 貢丸)
+        // 王國成員名單
         const initialMembers = [
             { gameId: '竹息辣寶貝', lineId: 'Nick' }, { gameId: '這是我的鯊鯊', lineId: 'M' },
             { gameId: '歐娜', lineId: 'ANDYHU' }, { gameId: '雪山上の醬板鴨', lineId: 'Hank Shen' },
@@ -141,7 +141,6 @@
             }))
         });
 
-        // 預設擴編為 7 隊
         const defaultTeams = [
             createEmptyTeam('team_1', '第一小隊 (主攻/進攻組)'),
             createEmptyTeam('team_2', '第二小隊 (防守/牽制組)'),
@@ -152,6 +151,28 @@
             createEmptyTeam('team_7', '第七小隊 (預備組)')
         ];
 
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null };
+            }
+            static getDerivedStateFromError(error) { return { hasError: true, error }; }
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div style={{ padding: '20px', backgroundColor: '#fee2e2', color: '#991b1b', minHeight: '100vh', fontFamily: 'sans-serif' }}>
+                            <h2 style={{ fontSize: '24px', fontWeight: 'bold' }}>⚠️ 系統發生錯誤</h2>
+                            <p>請將畫面截圖傳給管理員。</p>
+                            <pre style={{ backgroundColor: '#fef2f2', padding: '15px', borderRadius: '8px', overflowX: 'auto', border: '1px solid #fca5a5' }}>
+                                {this.state.error && this.state.error.toString()}
+                            </pre>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
         function App() {
             const [currentUser, setCurrentUser] = useState(null);
             const [isAdmin, setIsAdmin] = useState(false);
@@ -160,7 +181,6 @@
             const [toastMessage, setToastMessage] = useState('');
             const [isSaving, setIsSaving] = useState(false);
 
-            // 監聽登入狀態
             useEffect(() => {
                 const unsubscribe = firebase.auth().onAuthStateChanged((user) => {
                     if (user) {
@@ -177,18 +197,28 @@
                 return () => unsubscribe();
             }, []);
 
-            // 即時監聽 Firestore 隊伍資料 
+            // 🔥 強制擴編 7 隊：即時監聽與自動補齊
             useEffect(() => {
                 const unsubscribe = db.collection('battleTeams').doc('allData').onSnapshot((doc) => {
                     if (doc.exists && doc.data() && Array.isArray(doc.data().teams)) {
-                        const cloudTeams = doc.data().teams;
+                        let cloudTeams = doc.data().teams;
+                        
+                        // 如果雲端的隊伍少於 7 隊，強制補齊空隊伍！
+                        if (cloudTeams.length < 7) {
+                            const missingCount = 7 - cloudTeams.length;
+                            for (let i = 0; i < missingCount; i++) {
+                                const newIndex = cloudTeams.length + 1;
+                                cloudTeams.push(createEmptyTeam(`team_${Date.now()}_${i}`, `第 ${newIndex} 小隊 (預備組)`));
+                            }
+                            // 立即寫回雲端修復資料
+                            db.collection('battleTeams').doc('allData').set({ teams: cloudTeams });
+                        }
+                        
                         setTeams(cloudTeams);
-                        // 確保當前選中的隊伍還存在
                         if (!cloudTeams.find(t => t.id === activeTeamId) && cloudTeams.length > 0) {
                             setActiveTeamId(cloudTeams[0].id);
                         }
                     } else {
-                        // 若資料庫尚無資料，自動初始化寫入預設隊伍
                         db.collection('battleTeams').doc('allData').set({ teams: defaultTeams });
                     }
                 }, (error) => {
@@ -202,7 +232,6 @@
                 setTimeout(() => setToastMessage(''), 3000);
             };
 
-            // 🔥 更新：將密碼修改為 741106
             const handlePasswordLogin = () => {
                 const pwd = window.prompt('請輸入管理員專屬密碼：');
                 if (pwd === '741106') {
@@ -229,7 +258,6 @@
                 }
             };
 
-            // 儲存變更至雲端
             const saveToCloud = async (updatedTeams, successMsg = '✅ 已同步更新！') => {
                 setIsSaving(true);
                 try {
@@ -241,14 +269,12 @@
                 setIsSaving(false);
             };
 
-            // 管理員：修改隊伍名稱
+            // 🔥 修改：所有人都可以修改隊伍名稱 (移除 isAdmin 限制)
             const handleTeamNameChange = (teamId, newName) => {
-                if (!isAdmin) return;
                 const updated = teams.map(t => t.id === teamId ? { ...t, teamName: newName } : t);
                 setTeams(updated);
             };
 
-            // 管理員：新增隊伍
             const handleAddTeam = () => {
                 if (!isAdmin) return;
                 const newId = `team_${Date.now()}`;
@@ -259,7 +285,6 @@
                 saveToCloud(updated, '➕ 已新增隊伍！');
             };
 
-            // 管理員：刪除隊伍
             const handleDeleteTeam = (teamId) => {
                 if (!isAdmin) return;
                 if (teams.length <= 1) {
@@ -274,7 +299,6 @@
                 }
             };
             
-            // 管理員：清空重置
             const handleResetAll = async () => {
                 if (!isAdmin) return;
                 if (confirm('⚠️ 警告：確定要清空所有的隊伍配置嗎？這會回復到預設的 7 支空隊伍，且此動作無法復原！')) {
@@ -289,7 +313,6 @@
                 }
             };
 
-            // 更新成員欄位 (所有人皆可改成員、職業、技能；管理員可改任務)
             const handleSlotChange = (teamId, slotIndex, field, value, skillIndex = null) => {
                 if (field === 'task' && !isAdmin) return;
 
@@ -313,7 +336,6 @@
                 setTeams(updated);
             };
 
-            // 一鍵複製整份配置貼到 LINE
             const copyTeamSummary = () => {
                 let text = "⚔️ 【喵咪戰場分隊與技能配置表】 ⚔️\n\n";
                 teams.forEach(team => {
@@ -344,8 +366,6 @@
             };
 
             const currentTeam = teams.find(t => t.id === activeTeamId) || teams[0];
-
-            // 取得已被其他格子選走的成員 ID，方便在下拉選單提示
             const assignedMemberIds = new Set();
             teams.forEach(t => t.slots.forEach(s => { if (s.memberId) assignedMemberIds.add(s.memberId); }));
 
@@ -365,7 +385,7 @@
                                     <i className="fa-solid fa-shield-halved text-amber-400"></i> 
                                     喵咪戰場分隊與技能配置
                                 </h1>
-                                <p className="text-slate-300 text-sm mt-1">成員可自由填寫職業與技能，管理員負責編隊與指派任務</p>
+                                <p className="text-slate-300 text-sm mt-1">成員可自由填寫職業與技能，管理員負責指派任務</p>
                             </div>
                             
                             <div className="flex flex-wrap items-center gap-3 bg-black/40 px-4 py-2.5 rounded-xl backdrop-blur-md border border-white/15">
@@ -459,25 +479,19 @@
                                 {/* 1. 隊伍名稱區塊 */}
                                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gray-300 pb-4">
                                     <div className="flex-1 w-full">
+                                        {/* 🔥 更新：隊伍名稱所有人皆可修改 */}
                                         <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1 mb-1">
-                                            隊伍名稱 {isAdmin ? <span className="text-blue-600">(管理員可修改)</span> : <span className="text-gray-400">(僅管理員可修改)</span>}
+                                            隊伍名稱 <span className="text-blue-600">(點擊框框即可修改)</span>
                                         </label>
-                                        {isAdmin ? (
-                                            <div className="flex items-center gap-2">
-                                                <input 
-                                                    type="text"
-                                                    value={currentTeam.teamName}
-                                                    onChange={(e) => handleTeamNameChange(currentTeam.id, e.target.value)}
-                                                    onBlur={() => saveToCloud(teams, '✅ 隊伍名稱已更新')}
-                                                    className="text-xl md:text-2xl font-black text-gray-900 bg-white border-2 border-blue-300 focus:border-blue-600 rounded-xl px-4 py-2 w-full max-w-md outline-none"
-                                                />
-                                            </div>
-                                        ) : (
-                                            <h2 className="text-2xl font-black text-gray-900 flex items-center gap-2">
-                                                <i className="fa-solid fa-flag text-blue-600"></i>
-                                                {currentTeam.teamName}
-                                            </h2>
-                                        )}
+                                        <div className="flex items-center gap-2">
+                                            <input 
+                                                type="text"
+                                                value={currentTeam.teamName}
+                                                onChange={(e) => handleTeamNameChange(currentTeam.id, e.target.value)}
+                                                onBlur={() => saveToCloud(teams, '✅ 隊伍名稱已更新')}
+                                                className="text-xl md:text-2xl font-black text-gray-900 bg-white border-2 border-blue-300 focus:border-blue-600 rounded-xl px-4 py-2 w-full max-w-md outline-none transition-colors"
+                                            />
+                                        </div>
                                     </div>
 
                                     {isAdmin && teams.length > 1 && (
@@ -500,7 +514,7 @@
                                             <div key={idx} className="bg-white/95 rounded-2xl p-5 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
                                                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
                                                     
-                                                    {/* 左側：編號 + 成員選擇 + 職業選擇 (佔 4 欄) */}
+                                                    {/* 左側：編號 + 成員選擇 + 職業選擇 */}
                                                     <div className="lg:col-span-4 space-y-3 border-b lg:border-b-0 lg:border-r border-gray-200 pb-4 lg:pb-0 lg:pr-4">
                                                         <div className="flex items-center justify-between">
                                                             <span className="bg-slate-800 text-white text-xs font-black px-2.5 py-1 rounded-lg">
@@ -513,7 +527,6 @@
                                                             )}
                                                         </div>
 
-                                                        {/* 成員下拉選單 */}
                                                         <div>
                                                             <label className="block text-xs font-bold text-gray-600 mb-1">選擇成員：</label>
                                                             <select 
@@ -533,7 +546,6 @@
                                                             </select>
                                                         </div>
 
-                                                        {/* 職業選擇 */}
                                                         <div>
                                                             <label className="block text-xs font-bold text-gray-600 mb-1">選擇職業：</label>
                                                             <div className="grid grid-cols-5 gap-1.5">
@@ -555,12 +567,11 @@
                                                         </div>
                                                     </div>
 
-                                                    {/* 中間：主動技能 3 種 & 被動技能 3 種 (佔 5 欄) */}
+                                                    {/* 中間：主動技能 & 被動技能 */}
                                                     <div className="lg:col-span-5 space-y-3 border-b lg:border-b-0 lg:border-r border-gray-200 pb-4 lg:pb-0 lg:pr-4">
-                                                        {/* 主動技能 */}
                                                         <div>
                                                             <label className="block text-xs font-bold text-orange-600 mb-1.5 flex items-center gap-1">
-                                                                <i className="fa-solid fa-fire"></i> 主動技能 (最多 3 種，大家皆可填寫)
+                                                                <i className="fa-solid fa-fire"></i> 主動技能 (最多 3 種)
                                                             </label>
                                                             <div className="grid grid-cols-3 gap-2">
                                                                 {[0, 1, 2].map(sIdx => (
@@ -576,10 +587,9 @@
                                                             </div>
                                                         </div>
 
-                                                        {/* 被動技能 */}
                                                         <div>
                                                             <label className="block text-xs font-bold text-indigo-600 mb-1.5 flex items-center gap-1">
-                                                                <i className="fa-solid fa-shield"></i> 被動技能 (最多 3 種，大家皆可填寫)
+                                                                <i className="fa-solid fa-shield"></i> 被動技能 (最多 3 種)
                                                             </label>
                                                             <div className="grid grid-cols-3 gap-2">
                                                                 {[0, 1, 2].map(sIdx => (
@@ -596,7 +606,7 @@
                                                         </div>
                                                     </div>
 
-                                                    {/* 右側：賦予任務 (佔 3 欄，僅管理員可編輯) */}
+                                                    {/* 右側：賦予任務 */}
                                                     <div className="lg:col-span-3 flex flex-col justify-between h-full">
                                                         <div>
                                                             <label className="block text-xs font-bold text-rose-600 mb-1.5 flex items-center justify-between">
@@ -643,7 +653,11 @@
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        root.render(
+            <ErrorBoundary>
+                <App />
+            </ErrorBoundary>
+        );
     </script>
 </body>
 </html>
